@@ -4,7 +4,7 @@ from functools import partial
 import trio
 from trio_websocket import ConnectionClosed, serve_websocket
 
-TIMEOUT = 1
+from helpers import TIMEOUT
 
 buses = {}
 
