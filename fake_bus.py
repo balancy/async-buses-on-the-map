@@ -11,18 +11,12 @@ TIMEOUT = 1
 
 async def run_bus(route, ws):
     message = {
-        'msgType': 'Buses',
-        'buses': [
-            {
-                'busId': f'{route["name"]}-0',
-                'route': route['name'],
-            },
-        ],
+        'busId': f'{route["name"]}-0',
+        'route': route['name'],
     }
+
     for coordinates in route['coordinates']:
-        message['buses'][0].update(
-            {'lat': coordinates[0], 'lng': coordinates[1]}
-        )
+        message.update({'lat': coordinates[0], 'lng': coordinates[1]})
         await ws.send_message(json.dumps(message, ensure_ascii=False))
         await trio.sleep(TIMEOUT)
 
