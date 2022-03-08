@@ -1,7 +1,7 @@
 import json
 import os
 
-TIMEOUT = 0.5
+TIMEOUT = 0.2
 
 
 def load_routes(directory_path='routes'):
