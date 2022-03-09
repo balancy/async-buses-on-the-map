@@ -1,30 +1,58 @@
+import functools
 import json
 import logging
+import os
 from contextlib import suppress
+from dataclasses import asdict
 from itertools import chain, cycle
 from random import choice, randint
 
 import asyncclick as click
 import trio
-from trio_websocket import open_websocket_url
+from trio_websocket import ConnectionClosed, HandshakeError, open_websocket_url
 
-from helpers import generate_bus_id, load_routes, relaunch_on_disconnect
+from helper_classes import Bus
+
+RECONNECTION_TIMEOUT = 5
 
 
-async def run_bus(route, bus_number, send_channel, prefix, timeout):
-    prefix = f'{prefix}-' if prefix else prefix
-    message = {
-        'busId': generate_bus_id(f"{prefix}{route['name']}", bus_number),
-        'route': route['name'],
-    }
+def load_routes(routes_amount, directory_path='routes'):
+    for filename in os.listdir(directory_path)[: routes_amount + 1]:
+        if filename.endswith(".json"):
+            filepath = os.path.join(directory_path, filename)
+            with open(filepath, 'r', encoding='utf8') as file:
+                yield json.load(file)
 
-    coords = route['coordinates']
-    start_index = randint(0, len(coords) - 1)
-    bus_route = chain(coords[start_index:], coords[:start_index])
+
+def generate_bus_id(route_id, bus_index):
+    return f"{route_id}-{bus_index}"
+
+
+def relaunch_on_disconnect(async_function):
+    @functools.wraps(async_function)
+    async def wrapper(*args, **kwargs):
+        while True:
+            try:
+                return await async_function(*args, **kwargs)
+            except (ConnectionClosed, HandshakeError):
+                logger.error('Connection lost. Trying to reconnect ...')
+                await trio.sleep(RECONNECTION_TIMEOUT)
+
+    return wrapper
+
+
+async def run_bus(route, bus_number, send_channel, emulator_id, timeout):
+    emulator_id = f'{emulator_id}-' if emulator_id else emulator_id
+    bus_id = generate_bus_id(f"{emulator_id}{route['name']}", bus_number)
+    bus = Bus(bus_id, route['name'])
+
+    coordinates = route['coordinates']
+    start_index = randint(0, len(coordinates) - 1)
+    bus_route = chain(coordinates[start_index:], coordinates[:start_index])
 
     for lat, lng in cycle(bus_route):
-        message.update({'lat': lat, 'lng': lng})
-        await send_channel.send(json.dumps(message, ensure_ascii=False))
+        bus.update_coordinates(lat, lng)
+        await send_channel.send(json.dumps(asdict(bus), ensure_ascii=False))
         await trio.sleep(timeout)
 
 
