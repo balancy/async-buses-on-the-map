@@ -1,4 +1,5 @@
 import json
+import logging
 from contextlib import suppress
 from functools import partial
 
@@ -22,8 +23,16 @@ async def listen_to_client(request):
             break
 
 
-async def talk_to_browser(request):
-    ws = await request.accept()
+async def listen_to_browser(ws):
+    while True:
+        try:
+            message = await ws.get_message()
+            logger.info(message)
+        except ConnectionClosed:
+            break
+
+
+async def talk_to_browser(ws):
     while True:
         try:
             message = {
@@ -34,6 +43,13 @@ async def talk_to_browser(request):
             await trio.sleep(TIMEOUT)
         except ConnectionClosed:
             break
+
+
+async def interact_with_browser(request):
+    ws = await request.accept()
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(listen_to_browser, ws)
+        nursery.start_soon(talk_to_browser, ws)
 
 
 async def main():
@@ -50,7 +66,7 @@ async def main():
         nursery.start_soon(
             partial(
                 serve_websocket,
-                talk_to_browser,
+                interact_with_browser,
                 '127.0.0.1',
                 8000,
                 ssl_context=None,
@@ -59,5 +75,11 @@ async def main():
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        format=u'%(levelname)s:server: %(message)s',
+        level=logging.INFO,
+    )
+    logger = logging.getLogger(__name__)
+
     with suppress(KeyboardInterrupt):
         trio.run(main)
