@@ -6,7 +6,7 @@ from functools import partial
 import trio
 from trio_websocket import ConnectionClosed, serve_websocket
 
-TIMEOUT = 0.1
+TIMEOUT = 0.5
 
 buses = {}
 
@@ -16,6 +16,15 @@ def is_bus_inside_browser_window(bounds, lat, lng):
         bounds['south_lat'] < lat < bounds['north_lat']
         and bounds['west_lng'] < lng < bounds['east_lng']
     )
+
+
+def find_buses_visible_in_browser(bounds):
+    visible_buses = [
+        bus
+        for bus in buses.values()
+        if is_bus_inside_browser_window(bounds, bus['lat'], bus['lng'])
+    ]
+    return visible_buses
 
 
 async def listen_to_client(request):
@@ -30,35 +39,29 @@ async def listen_to_client(request):
             break
 
 
-async def listen_to_browser(ws):
+async def listen_to_browser(ws, window_bounds):
     while True:
         try:
             message = await ws.get_message()
             logger.info(message)
 
-            window_bounds = json.loads(message)['data']
-
-            visible_buses = [
-                bus
-                for bus in buses.values()
-                if is_bus_inside_browser_window(
-                    window_bounds, bus['lat'], bus['lng']
-                )
-            ]
-
-            logger.info(f'{len(visible_buses)} inside window bounds')
+            window_bounds.clear()
+            window_bounds.append(json.loads(message)['data'])
         except ConnectionClosed:
             break
 
 
-async def talk_to_browser(ws):
+async def display_buses_in_browser(ws, window_bounds):
     while True:
         try:
-            message = {
-                'msgType': 'Buses',
-                'buses': [bus_info for bus_info in buses.values()],
-            }
-            await ws.send_message(json.dumps(message))
+            if window_bounds:
+                visible_buses = find_buses_visible_in_browser(window_bounds[0])
+                message = {
+                    'msgType': 'Buses',
+                    'buses': visible_buses,
+                }
+                logger.info(f'There are {len(visible_buses)} visible buses')
+                await ws.send_message(json.dumps(message))
             await trio.sleep(TIMEOUT)
         except ConnectionClosed:
             break
@@ -66,9 +69,11 @@ async def talk_to_browser(ws):
 
 async def interact_with_browser(request):
     ws = await request.accept()
+    window_bounds = []
+
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(listen_to_browser, ws)
-        nursery.start_soon(talk_to_browser, ws)
+        nursery.start_soon(listen_to_browser, ws, window_bounds)
+        nursery.start_soon(display_buses_in_browser, ws, window_bounds)
 
 
 async def main():
