@@ -35,7 +35,7 @@ def relaunch_on_disconnect(async_function):
             try:
                 return await async_function(*args, **kwargs)
             except (ConnectionClosed, HandshakeError):
-                logger.error('Connection lost. Trying to reconnect ...')
+                # logger.error('Connection lost. Trying to reconnect ...')
                 await trio.sleep(RECONNECTION_TIMEOUT)
 
     return wrapper
@@ -57,10 +57,10 @@ async def run_bus(route, bus_number, send_channel, emulator_id, timeout):
 
 
 @relaunch_on_disconnect
-async def send_updates(server_address, receive_channel, logging_enabled):
+async def send_updates(server_address, receive_channel, is_logging_enabled):
     async with open_websocket_url(server_address) as ws:
         async for message in receive_channel:
-            if logging_enabled:
+            if is_logging_enabled:
                 logger.info(message)
             await ws.send_message(message)
 
@@ -72,7 +72,7 @@ async def send_updates(server_address, receive_channel, logging_enabled):
 @click.option('--sockets_amount', default=10, help='Amount of websockets')
 @click.option('--emulator_id', default='', help='Prefix for busId')
 @click.option('--timeout', default=0.5, help='Refresh timeout for coordinates')
-@click.option('--logging_enabled', default=False, help='Is logging enabled?')
+@click.option('--is_logging_enabled', default=False)
 async def launch_buses(
     server,
     routes_amount,
@@ -80,7 +80,7 @@ async def launch_buses(
     sockets_amount,
     emulator_id,
     timeout,
-    logging_enabled,
+    is_logging_enabled,
 ):
     channels = [trio.open_memory_channel(0) for _ in range(sockets_amount)]
 
@@ -102,13 +102,13 @@ async def launch_buses(
                 send_updates,
                 server,
                 receive_channel,
-                logging_enabled,
+                is_logging_enabled,
             )
 
 
 if __name__ == '__main__':
     logging.basicConfig(
-        format=u'[%(asctime)s] %(levelname)s: %(message)s',
+        format=u'%(levelname)s:client: %(message)s',
         level=logging.INFO,
     )
     logger = logging.getLogger(__name__)

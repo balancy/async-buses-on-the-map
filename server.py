@@ -4,6 +4,7 @@ from contextlib import suppress
 from dataclasses import asdict
 from functools import partial
 
+import asyncclick as click
 import trio
 from trio_websocket import ConnectionClosed, serve_websocket
 
@@ -46,55 +47,66 @@ async def listen_to_browser(ws, window_bounds):
     while True:
         try:
             message = await ws.get_message()
-            logger.info(message)
-
             window_bounds.update(**json.loads(message)['data'])
         except ConnectionClosed:
             break
 
 
-async def display_buses_in_browser(ws, window_bounds):
+async def display_buses_in_browser(ws, window_bounds, is_logging_enabled):
     while True:
         try:
             if window_bounds.are_set():
                 visible_buses = find_buses_visible_in_browser(window_bounds)
+                if is_logging_enabled:
+                    logger.info(f'{len(visible_buses)} buses visible')
+
                 message = {
                     'msgType': 'Buses',
                     'buses': [asdict(bus) for bus in visible_buses],
                 }
-                logger.info(f'There are {len(visible_buses)} visible buses')
                 await ws.send_message(json.dumps(message))
             await trio.sleep(TIMEOUT)
         except ConnectionClosed:
             break
 
 
-async def interact_with_browser(request):
+async def interact_with_browser(request, is_logging_enabled):
     ws = await request.accept()
     window_bounds = WindowBounds()
 
     async with trio.open_nursery() as nursery:
         nursery.start_soon(listen_to_browser, ws, window_bounds)
-        nursery.start_soon(display_buses_in_browser, ws, window_bounds)
+        nursery.start_soon(
+            display_buses_in_browser, ws, window_bounds, is_logging_enabled
+        )
 
 
-async def main():
+@click.command()
+@click.option('--bus_port', default=8080, help='Port to listen client on')
+@click.option('--is_logging_enabled', default=False, help='Is logging enabled')
+@click.option(
+    '--browser_port', default=8000, help='Port to interact with browser on'
+)
+async def launch_server(bus_port, browser_port, is_logging_enabled):
     async with trio.open_nursery() as nursery:
         nursery.start_soon(
             partial(
                 serve_websocket,
                 listen_to_client,
                 '127.0.0.1',
-                8080,
+                bus_port,
                 ssl_context=None,
             ),
         ),
         nursery.start_soon(
             partial(
                 serve_websocket,
-                interact_with_browser,
+                partial(
+                    interact_with_browser,
+                    is_logging_enabled=is_logging_enabled,
+                ),
                 '127.0.0.1',
-                8000,
+                browser_port,
                 ssl_context=None,
             ),
         )
@@ -108,4 +120,4 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
 
     with suppress(KeyboardInterrupt):
-        trio.run(main)
+        launch_server(_anyio_backend='trio')
