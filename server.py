@@ -11,6 +11,13 @@ TIMEOUT = 0.1
 buses = {}
 
 
+def is_bus_inside_browser_window(bounds, lat, lng):
+    return (
+        bounds['south_lat'] < lat < bounds['north_lat']
+        and bounds['west_lng'] < lng < bounds['east_lng']
+    )
+
+
 async def listen_to_client(request):
     ws = await request.accept()
     while True:
@@ -28,6 +35,18 @@ async def listen_to_browser(ws):
         try:
             message = await ws.get_message()
             logger.info(message)
+
+            window_bounds = json.loads(message)['data']
+
+            visible_buses = [
+                bus
+                for bus in buses.values()
+                if is_bus_inside_browser_window(
+                    window_bounds, bus['lat'], bus['lng']
+                )
+            ]
+
+            logger.info(f'{len(visible_buses)} inside window bounds')
         except ConnectionClosed:
             break
 
