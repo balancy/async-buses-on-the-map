@@ -3,13 +3,12 @@ import logging
 from contextlib import suppress
 from itertools import chain, cycle
 from random import choice, randint
-from sys import stderr
 
 import asyncclick as click
 import trio
 from trio_websocket import open_websocket_url
 
-from helpers import generate_bus_id, load_routes
+from helpers import generate_bus_id, load_routes, relaunch_on_disconnect
 
 
 async def run_bus(route, bus_number, send_channel, prefix, timeout):
@@ -29,16 +28,13 @@ async def run_bus(route, bus_number, send_channel, prefix, timeout):
         await trio.sleep(timeout)
 
 
+@relaunch_on_disconnect
 async def send_updates(server_address, receive_channel, logging_enabled):
     async with open_websocket_url(server_address) as ws:
-        while True:
-            try:
-                async for message in receive_channel:
-                    if logging_enabled:
-                        logger.info(message)
-                    await ws.send_message(message)
-            except OSError as ose:
-                print('Connection attempt failed: %s' % ose, file=stderr)
+        async for message in receive_channel:
+            if logging_enabled:
+                logger.info(message)
+            await ws.send_message(message)
 
 
 @click.command()

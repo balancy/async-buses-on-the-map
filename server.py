@@ -5,7 +5,7 @@ from functools import partial
 import trio
 from trio_websocket import ConnectionClosed, serve_websocket
 
-from helpers import TIMEOUT
+TIMEOUT = 0.1
 
 buses = {}
 
@@ -15,7 +15,6 @@ async def listen_to_client(request):
     while True:
         try:
             message = await ws.get_message()
-            # print(message)
 
             bus_info = json.loads(message)
             buses.update({bus_info['busId']: bus_info})
