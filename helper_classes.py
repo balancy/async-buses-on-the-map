@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 
 import pydantic
@@ -14,6 +15,28 @@ class Bus:
         self.lat = lat
         self.lng = lng
 
+    @classmethod
+    def create_from(cls, message):
+        try:
+            decoded_message = json.loads(message)
+            BusSchema.parse_obj(decoded_message)
+        except json.JSONDecodeError as exc:
+            raise WindowBoundsException(
+                {
+                    'msgType': 'JSONDecodeError',
+                    'errors': [exc.args],
+                }
+            )
+        except pydantic.ValidationError as exc:
+            raise WindowBoundsException(
+                {
+                    'msgType': 'ValidationError',
+                    'errors': [error for error in exc.errors()],
+                }
+            )
+        else:
+            return cls(**decoded_message)
+
 
 @dataclass
 class WindowBounds:
@@ -29,19 +52,68 @@ class WindowBounds:
         self.east_lng = east_lng
 
     def update_from_message(self, message):
-        self.__update(**message['data'])
+        try:
+            decoded_message = json.loads(message)
+            WindowBoundsMessageSchema.parse_obj(decoded_message)
+        except json.JSONDecodeError as exc:
+            raise IncorrectBusException(
+                {
+                    'msgType': 'JSONDecodeError',
+                    'errors': [exc.args],
+                }
+            )
+        except pydantic.ValidationError as exc:
+            raise IncorrectBusException(
+                {
+                    'msgType': 'ValidationError',
+                    'errors': [error for error in exc.errors()],
+                }
+            )
+        else:
+            self.__update(**decoded_message['data'])
 
     def are_set(self):
         return self.south_lat
 
 
-class WindowBoundsScheme(pydantic.BaseModel):
+class BusSchema(pydantic.BaseModel):
+    busId: str
+    route: str
+    lat: float
+    lng: float
+
+
+class WindowBoundsSchema(pydantic.BaseModel):
     south_lat: float
     north_lat: float
     west_lng: float
     east_lng: float
 
 
-class WindowBoundsMessageScheme(pydantic.BaseModel):
+class WindowBoundsMessageSchema(pydantic.BaseModel):
     msgType: str
-    data: WindowBoundsScheme
+    data: WindowBoundsSchema
+
+
+class WindowBoundsException(Exception):
+    pass
+
+
+class IncorrectBusException(Exception):
+    pass
+
+
+if __name__ == '__main__':
+    message = 'salut'
+    message = (
+        '{"data":{"south_lat":55.727011350768876,'
+        '"north_lat":55.78878211812553,"west_lng":37.56056785932743,'
+        '"east_lng":37.670259479200475}}'
+    )
+
+    bounds = WindowBounds()
+    try:
+        bounds.update_from_message(message)
+    except WindowBoundsException as exc:
+        exc_message, *_ = exc.args
+        print(exc_message)

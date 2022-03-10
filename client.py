@@ -3,14 +3,12 @@ import json
 import logging
 import os
 from contextlib import suppress
-
-# from dataclasses import asdict
+from dataclasses import asdict
 from itertools import chain, cycle
 from random import choice, randint
 
 import asyncclick as click
 import trio
-from pydantic.json import pydantic_encoder
 from trio_websocket import ConnectionClosed, HandshakeError, open_websocket_url
 
 from helper_classes import Bus
@@ -54,9 +52,7 @@ async def run_bus(route, bus_number, send_channel, emulator_id, timeout):
 
     for lat, lng in cycle(bus_route):
         bus.update_coordinates(lat, lng)
-        await send_channel.send(
-            json.dumps(bus, ensure_ascii=False, default=pydantic_encoder)
-        )
+        await send_channel.send(json.dumps(asdict(bus), ensure_ascii=False))
         await trio.sleep(timeout)
 
 

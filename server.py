@@ -1,17 +1,19 @@
 import json
 import logging
-import pickle
-import sys
 from contextlib import suppress
 from functools import partial
 
 import asyncclick as click
-import pydantic
 import trio
 from pydantic.json import pydantic_encoder
 from trio_websocket import ConnectionClosed, serve_websocket
 
-from helper_classes import Bus, WindowBounds, WindowBoundsMessageScheme
+from helper_classes import (
+    Bus,
+    IncorrectBusException,
+    WindowBounds,
+    WindowBoundsException,
+)
 
 TIMEOUT = 0.5
 
@@ -39,11 +41,16 @@ async def listen_to_client(request):
     while True:
         try:
             message = await ws.get_message()
-
-            bus = Bus(**json.loads(message))
+            bus = Bus.create_from(message)
             buses.update({bus.busId: bus})
+        except WindowBoundsException as exc:
+            exc_message, *_ = exc.args
+            await ws.send_message(json.dumps(exc_message))
         except ConnectionClosed:
             break
+        else:
+            correct_response = {'msgType': 'Success', 'content': message}
+            await ws.send_message(json.dumps(correct_response))
 
 
 async def listen_to_browser(ws, window_bounds, verbose):
@@ -53,15 +60,15 @@ async def listen_to_browser(ws, window_bounds, verbose):
             if verbose:
                 logger.info(message)
 
-            decoded_message = json.loads(message)
-            WindowBoundsMessageScheme.parse_obj(decoded_message)
-        except (json.JSONDecodeError, pydantic.ValidationError):
-            _, error, _ = sys.exc_info()
-            await ws.send_message(pickle.dumps(error))
+            window_bounds.update_from_message(message)
+        except IncorrectBusException as exc:
+            exc_message, *_ = exc.args
+            await ws.send_message(json.dumps(exc_message))
         except ConnectionClosed:
             break
         else:
-            window_bounds.update_from_message(decoded_message)
+            correct_response = {'msgType': 'Success', 'content': message}
+            await ws.send_message(json.dumps(correct_response))
 
 
 async def display_buses_in_browser(ws, window_bounds, verbose):
