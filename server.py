@@ -1,14 +1,17 @@
 import json
 import logging
+import pickle
+import sys
 from contextlib import suppress
-from dataclasses import asdict
 from functools import partial
 
 import asyncclick as click
+import pydantic
 import trio
+from pydantic.json import pydantic_encoder
 from trio_websocket import ConnectionClosed, serve_websocket
 
-from helper_classes import Bus, WindowBounds
+from helper_classes import Bus, WindowBounds, WindowBoundsMessageScheme
 
 TIMEOUT = 0.5
 
@@ -43,51 +46,62 @@ async def listen_to_client(request):
             break
 
 
-async def listen_to_browser(ws, window_bounds):
+async def listen_to_browser(ws, window_bounds, verbose):
     while True:
         try:
             message = await ws.get_message()
-            window_bounds.update(**json.loads(message)['data'])
+            if verbose:
+                logger.info(message)
+
+            decoded_message = json.loads(message)
+            WindowBoundsMessageScheme.parse_obj(decoded_message)
+        except (json.JSONDecodeError, pydantic.ValidationError):
+            _, error, _ = sys.exc_info()
+            await ws.send_message(pickle.dumps(error))
         except ConnectionClosed:
             break
+        else:
+            window_bounds.update_from_message(decoded_message)
 
 
-async def display_buses_in_browser(ws, window_bounds, is_logging_enabled):
+async def display_buses_in_browser(ws, window_bounds, verbose):
     while True:
         try:
             if window_bounds.are_set():
                 visible_buses = find_buses_visible_in_browser(window_bounds)
-                if is_logging_enabled:
+                if verbose:
                     logger.info(f'{len(visible_buses)} buses visible')
 
                 message = {
                     'msgType': 'Buses',
-                    'buses': [asdict(bus) for bus in visible_buses],
+                    'buses': [bus for bus in visible_buses],
                 }
-                await ws.send_message(json.dumps(message))
+                await ws.send_message(
+                    json.dumps(message, default=pydantic_encoder)
+                )
             await trio.sleep(TIMEOUT)
         except ConnectionClosed:
             break
 
 
-async def interact_with_browser(request, is_logging_enabled):
+async def interact_with_browser(request, verbose):
     ws = await request.accept()
     window_bounds = WindowBounds()
 
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(listen_to_browser, ws, window_bounds)
+        nursery.start_soon(listen_to_browser, ws, window_bounds, verbose)
         nursery.start_soon(
-            display_buses_in_browser, ws, window_bounds, is_logging_enabled
+            display_buses_in_browser, ws, window_bounds, verbose
         )
 
 
 @click.command()
 @click.option('--bus_port', default=8080, help='Port to listen client on')
-@click.option('--is_logging_enabled', default=False, help='Is logging enabled')
+@click.option('--verbose', default=False, help='Is logging enabled')
 @click.option(
     '--browser_port', default=8000, help='Port to interact with browser on'
 )
-async def launch_server(bus_port, browser_port, is_logging_enabled):
+async def launch_server(bus_port, browser_port, verbose):
     async with trio.open_nursery() as nursery:
         nursery.start_soon(
             partial(
@@ -103,7 +117,7 @@ async def launch_server(bus_port, browser_port, is_logging_enabled):
                 serve_websocket,
                 partial(
                     interact_with_browser,
-                    is_logging_enabled=is_logging_enabled,
+                    verbose=verbose,
                 ),
                 '127.0.0.1',
                 browser_port,

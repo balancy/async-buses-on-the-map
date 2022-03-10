@@ -3,12 +3,14 @@ import json
 import logging
 import os
 from contextlib import suppress
-from dataclasses import asdict
+
+# from dataclasses import asdict
 from itertools import chain, cycle
 from random import choice, randint
 
 import asyncclick as click
 import trio
+from pydantic.json import pydantic_encoder
 from trio_websocket import ConnectionClosed, HandshakeError, open_websocket_url
 
 from helper_classes import Bus
@@ -35,7 +37,7 @@ def relaunch_on_disconnect(async_function):
             try:
                 return await async_function(*args, **kwargs)
             except (ConnectionClosed, HandshakeError):
-                # logger.error('Connection lost. Trying to reconnect ...')
+                logger.error('Connection lost. Trying to reconnect ...')
                 await trio.sleep(RECONNECTION_TIMEOUT)
 
     return wrapper
@@ -52,15 +54,17 @@ async def run_bus(route, bus_number, send_channel, emulator_id, timeout):
 
     for lat, lng in cycle(bus_route):
         bus.update_coordinates(lat, lng)
-        await send_channel.send(json.dumps(asdict(bus), ensure_ascii=False))
+        await send_channel.send(
+            json.dumps(bus, ensure_ascii=False, default=pydantic_encoder)
+        )
         await trio.sleep(timeout)
 
 
 @relaunch_on_disconnect
-async def send_updates(server_address, receive_channel, is_logging_enabled):
+async def send_updates(server_address, receive_channel, verbose):
     async with open_websocket_url(server_address) as ws:
         async for message in receive_channel:
-            if is_logging_enabled:
+            if verbose:
                 logger.info(message)
             await ws.send_message(message)
 
@@ -72,7 +76,7 @@ async def send_updates(server_address, receive_channel, is_logging_enabled):
 @click.option('--sockets_amount', default=10, help='Amount of websockets')
 @click.option('--emulator_id', default='', help='Prefix for busId')
 @click.option('--timeout', default=0.5, help='Refresh timeout for coordinates')
-@click.option('--is_logging_enabled', default=False)
+@click.option('--verbose', default=False)
 async def launch_buses(
     server,
     routes_amount,
@@ -80,7 +84,7 @@ async def launch_buses(
     sockets_amount,
     emulator_id,
     timeout,
-    is_logging_enabled,
+    verbose,
 ):
     channels = [trio.open_memory_channel(0) for _ in range(sockets_amount)]
 
@@ -102,7 +106,7 @@ async def launch_buses(
                 send_updates,
                 server,
                 receive_channel,
-                is_logging_enabled,
+                verbose,
             )
 
 

@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 
+import pydantic
+
 
 @dataclass
 class Bus:
     busId: str
     route: str
-    lat: str = None
-    lng: str = None
+    lat: float = 0
+    lng: float = 0
 
     def update_coordinates(self, lat, lng):
         self.lat = lat
@@ -15,16 +17,31 @@ class Bus:
 
 @dataclass
 class WindowBounds:
-    south_lat: str = None
-    north_lat: str = None
-    west_lng: str = None
-    east_lng: str = None
+    south_lat: float = 0
+    north_lat: float = 0
+    west_lng: float = 0
+    east_lng: float = 0
 
-    def update(self, south_lat, north_lat, west_lng, east_lng):
+    def __update(self, south_lat, north_lat, west_lng, east_lng):
         self.south_lat = south_lat
         self.north_lat = north_lat
         self.west_lng = west_lng
         self.east_lng = east_lng
 
+    def update_from_message(self, message):
+        self.__update(**message['data'])
+
     def are_set(self):
         return self.south_lat
+
+
+class WindowBoundsScheme(pydantic.BaseModel):
+    south_lat: float
+    north_lat: float
+    west_lng: float
+    east_lng: float
+
+
+class WindowBoundsMessageScheme(pydantic.BaseModel):
+    msgType: str
+    data: WindowBoundsScheme
