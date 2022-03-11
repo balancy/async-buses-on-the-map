@@ -1,6 +1,6 @@
 # Buses on Moscow map
 
-The web application displays the imitation of Moscow buses traffic.
+The web application simulates Moscow buses traffic and displays it in the browser.
 
 <img src="screenshots/buses.gif">
 
