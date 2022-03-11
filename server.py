@@ -8,12 +8,7 @@ import trio
 from pydantic.json import pydantic_encoder
 from trio_websocket import ConnectionClosed, serve_websocket
 
-from helper_classes import (
-    Bus,
-    IncorrectBusException,
-    WindowBounds,
-    WindowBoundsException,
-)
+from helper_classes import Bus, InvalidDataFormatException, WindowBounds
 
 TIMEOUT = 0.5
 
@@ -43,7 +38,7 @@ async def listen_to_client(request):
             message = await ws.get_message()
             bus = Bus.create_from(message)
             buses.update({bus.busId: bus})
-        except WindowBoundsException as exc:
+        except InvalidDataFormatException as exc:
             exc_message, *_ = exc.args
             await ws.send_message(json.dumps(exc_message))
         except ConnectionClosed:
@@ -61,7 +56,7 @@ async def listen_to_browser(ws, window_bounds, verbose):
                 logger.info(message)
 
             window_bounds.update_from_message(message)
-        except IncorrectBusException as exc:
+        except InvalidDataFormatException as exc:
             exc_message, *_ = exc.args
             await ws.send_message(json.dumps(exc_message))
         except ConnectionClosed:

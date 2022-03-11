@@ -21,14 +21,14 @@ class Bus:
             decoded_message = json.loads(message)
             BusSchema.parse_obj(decoded_message)
         except json.JSONDecodeError as exc:
-            raise WindowBoundsException(
+            raise InvalidDataFormatException(
                 {
                     'msgType': 'JSONDecodeError',
                     'errors': [exc.args],
                 }
             )
         except pydantic.ValidationError as exc:
-            raise WindowBoundsException(
+            raise InvalidDataFormatException(
                 {
                     'msgType': 'ValidationError',
                     'errors': [error for error in exc.errors()],
@@ -56,14 +56,14 @@ class WindowBounds:
             decoded_message = json.loads(message)
             WindowBoundsMessageSchema.parse_obj(decoded_message)
         except json.JSONDecodeError as exc:
-            raise IncorrectBusException(
+            raise InvalidDataFormatException(
                 {
                     'msgType': 'JSONDecodeError',
                     'errors': [exc.args],
                 }
             )
         except pydantic.ValidationError as exc:
-            raise IncorrectBusException(
+            raise InvalidDataFormatException(
                 {
                     'msgType': 'ValidationError',
                     'errors': [error for error in exc.errors()],
@@ -95,25 +95,5 @@ class WindowBoundsMessageSchema(pydantic.BaseModel):
     data: WindowBoundsSchema
 
 
-class WindowBoundsException(Exception):
+class InvalidDataFormatException(Exception):
     pass
-
-
-class IncorrectBusException(Exception):
-    pass
-
-
-if __name__ == '__main__':
-    message = 'salut'
-    message = (
-        '{"data":{"south_lat":55.727011350768876,'
-        '"north_lat":55.78878211812553,"west_lng":37.56056785932743,'
-        '"east_lng":37.670259479200475}}'
-    )
-
-    bounds = WindowBounds()
-    try:
-        bounds.update_from_message(message)
-    except WindowBoundsException as exc:
-        exc_message, *_ = exc.args
-        print(exc_message)
